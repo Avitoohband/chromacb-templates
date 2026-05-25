@@ -1,0 +1,248 @@
+{{- if .Values.chromadb }}
+{{- if .Values.chromadb.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    argocd.argoproj.io/ignore-differences: /spec/volumeClaimTemplates
+  name: chroma-chromadb
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "chart.fullname" . }}
+  podManagementPolicy: "Parallel"
+  replicas: {{ .Values.chromadb.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template: 
+    metadata:
+      labels:
+        {{- include "chart.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/config-chromadb.yaml") . | sha256sum }} # Automatically Roll Deployments
+      {{- with .Values.chromadb.podSpec.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      securityContext: {{ toYaml .Values.chromadb.podSpec.securityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.chromadb.podSpec.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if and (semverCompare ">= 0.4.7" (include "chromadb.apiVersion" .)) .Values.chromadb.auth.enabled (eq .Values.chromadb.auth.type "basic") }}
+      initContainers:
+        - name: generate-htpasswd
+          image: {{ .Values.initImage }}
+          env:
+            - name: CHROMA_BASIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chromadb.auth.existingSecret | default "chromadb-auth" }}
+                  key: username
+            - name: CHROMA_BASIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chromadb.auth.existingSecret | default "chromadb-auth" }}
+                  key: password
+          command:
+            - sh
+            - -c
+            - |
+              htpasswd -Bbn ${CHROMA_BASIC_USER} ${CHROMA_BASIC_PASSWORD} > /chroma/auth/server.htpasswd
+              chmod 444 /chroma/auth/server.htpasswd
+          volumeMounts:
+            - mountPath: /chroma/auth/
+              name: htpasswd-volume
+      {{- end }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      containers:
+        - name: "chromadb"
+          image: "{{ .Values.chromadb.image.repository }}:{{ .Values.chromadb.apiVersion }}"
+          imagePullPolicy: "{{ .Values.chromadb.image.pullPolicy }}"
+          {{- if and (semverCompare "< 1.0.0" (include "chromadb.apiVersion" .)) .Values.chromadb.auth.enabled }}
+          envFrom:
+            - configMapRef:
+                {{- if (eq .Values.chromadb.auth.type "token") }}
+                name: {{ include "chart.fullname" . }}-token-auth-config
+                {{- end }}
+                {{- if (eq .Values.chromadb.auth.type "basic") }}
+                name: {{ include "chart.fullname" . }}-basic-auth-config
+                {{- end }}
+          {{- end }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- if and (semverCompare "< 1.0.0" (include "chromadb.apiVersion" .)) }}
+            - name: IS_PERSISTENT
+              value: "{{ .Values.chromadb.isPersistent }}"
+            - name: PERSIST_DIRECTORY
+              value: "{{ .Values.chromadb.persistDirectory }}"
+            - name: ALLOW_RESET
+              value: "{{ .Values.chromadb.allowReset | default false}}"
+            - name: ANONYMIZED_TELEMETRY
+              value: "{{ .Values.chromadb.anonymizedTelemetry | default false }}"
+            {{- if .Values.chromadb.corsAllowOrigins }}
+            - name: CHROMA_SERVER_CORS_ALLOW_ORIGINS
+              {{- if has "*" .Values.chromadb.corsAllowOrigins }}
+              # If '*' is in the list, output a raw wildcard for the "any()" mode.
+              value: "*"
+              {{- else }}
+              # Otherwise, format it as a JSON list for the "list()" mode.
+              value: '{{ .Values.chromadb.corsAllowOrigins | join "\",\"" | printf "[\"%s\"]"}}'
+              {{- end }}
+            {{- end }}           
+            - name: ROOT_LOG_LEVEL
+              value: "{{ .Values.chromadb.logging.root | upper | default "WARN" }}"
+            - name: CHROMA_LOG_LEVEL
+              value: "{{ .Values.chromadb.logging.chromadb | upper | default "DEBUG" }}"
+            - name: UVICORN_LOG_LEVEL_UVICORN
+              value: "{{ .Values.chromadb.logging.uvicorn | upper | default "INFO" }}"
+            {{- if .Values.chromadb.maintenance.collection_cache_policy }}
+            {{- if ne .Values.chromadb.maintenance.collection_cache_policy "LRU" }}
+                {{- fail "collection_cache_policy must be 'LRU'" }}
+            {{- end }}
+            - name: CHROMA_SEGMENT_CACHE_POLICY
+              value: "{{ .Values.chromadb.maintenance.collection_cache_policy }}"
+            - name: CHROMA_MEMORY_LIMIT_BYTES
+              {{- $bytes := int .Values.chromadb.maintenance.collection_cache_limit_bytes }}
+              {{- if le $bytes 0 }}
+                {{- fail "collection_cache_limit_bytes must be a positive integer" }}
+              {{- end }}
+              value: "{{ $bytes }}"
+            {{- end }}
+            {{- end }}
+            {{- if .Values.chromadb.serverHttpPort }}
+            - name: CHROMA_SERVER_HTTP_PORT
+              value: "{{ .Values.chromadb.serverHttpPort }}"
+            {{- end }}
+            # We keep this for backwards compatibility log levels below are used for the new images
+            {{- if and (semverCompare "< 1.0.0" (include "chromadb.apiVersion" .)) .Values.chromadb.logConfigFileLocation }}
+            - name: CHROMA_LOG_CONFIG
+            {{- if .Values.chromadb.logConfigMap }}
+              value: "/chroma/log_config.yaml"
+            {{- else }}
+              value: "{{ .Values.chromadb.logConfigFileLocation }}"
+            {{- end }}
+            {{- end }}
+            {{- if and (semverCompare "< 1.0.0" (include "chromadb.apiVersion" .)) .Values.chromadb.auth.enabled (eq .Values.chromadb.auth.type "token") }}
+            {{- if and (semverCompare ">= 0.4.7" (include "chromadb.apiVersion" .)) (semverCompare "< 0.5.0" (include "chromadb.apiVersion" .)) }}
+            - name: CHROMA_SERVER_AUTH_CREDENTIALS
+            {{- else if (semverCompare ">= 0.5.0" (include "chromadb.apiVersion" .))}}
+            - name: CHROMA_SERVER_AUTHN_CREDENTIALS
+            {{- end }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chromadb.auth.existingSecret | default "chromadb-auth" }}
+                  key: token
+            {{- end }}
+          ports:
+            - containerPort: {{ .Values.chromadb.serverHttpPort }}
+              name: http
+          {{- if or .Values.chromadb.resources.requests .Values.chromadb.resources.limits}}
+          resources:
+            {{- if .Values.chromadb.resources.requests }}
+            requests: {{ .Values.chromadb.resources.requests | toYaml | nindent 14 }}
+            {{- end }}
+            {{- if .Values.chromadb.resources.limits }}
+            limits: {{ .Values.chromadb.resources.limits | toYaml | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          securityContext: {{ .Values.chromadb.podSpec.securityContext | toYaml  | nindent 14 }}
+          volumeMounts:
+            {{- if and (semverCompare "< 1.0.0" (include "chromadb.apiVersion" .)) (semverCompare ">= 0.6.0" (include "chromadb.apiVersion" .)) }}
+            - mountPath: "/chroma/log_config.yaml"
+              name: log-config-chromadb
+              subPath: log_config.yaml
+            {{- else if (semverCompare "< 0.5.0" (include "chromadb.apiVersion" .))}}
+            - mountPath: "/chroma/log_config.yaml"
+              name: log-config-chromadb-legacy
+              subPath: log_config.yaml
+            {{- end }}
+            {{- if eq .Values.chromadb.isPersistent true }}
+            - mountPath: "{{.Values.chromadb.persistDirectory}}"
+              name: data
+            {{- end }}
+            {{- if and (semverCompare "< 1.0.0" (include "chromadb.apiVersion" .)) (semverCompare ">= 0.4.7" (include "chromadb.apiVersion" .)) .Values.chromadb.auth.enabled (eq .Values.chromadb.auth.type "basic") }}
+            - mountPath: /chroma/auth/
+              name: htpasswd-volume
+            {{- end }}
+            {{- if (semverCompare ">= 1.0.0" (include "chromadb.apiVersion" .)) }}
+            - mountPath: /config.yaml
+              name: v1-config
+              subPath: config.yaml
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.chromadb.serverHttpPort }}
+            failureThreshold: {{ .Values.chromadb.readinessProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.chromadb.readinessProbe.timeoutSeconds }}
+            periodSeconds: {{ .Values.chromadb.readinessProbe.periodSeconds }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.chromadb.serverHttpPort }}
+            failureThreshold: {{ .Values.chromadb.livenessProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.chromadb.livenessProbe.timeoutSeconds }}
+            periodSeconds: {{ .Values.chromadb.livenessProbe.periodSeconds }}
+          startupProbe:
+            tcpSocket:
+              port: {{ .Values.chromadb.serverHttpPort }}
+            failureThreshold: {{ .Values.chromadb.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.chromadb.startupProbe.periodSeconds }}
+            initialDelaySeconds: {{ .Values.chromadb.startupProbe.initialDelaySeconds }}
+      volumes:
+        {{- if and (semverCompare "< 1.0.0" (include "chromadb.apiVersion" .)) (semverCompare ">= 0.4.7" (include "chromadb.apiVersion" .)) .Values.chromadb.auth.enabled (eq .Values.chromadb.auth.type "basic") }}
+        - name: htpasswd-volume
+          emptyDir: { }
+        {{- end }}
+        {{- if (semverCompare "< 0.5.0" (include "chromadb.apiVersion" .)) }}
+        - name: log-config-chromadb-legacy
+          configMap:
+            name: "log-config-chromadb"
+            defaultMode: 0644
+        {{- end }}
+        {{- if .Values.chromadb.logConfigMap }}
+        - name: log-config-chromadb
+          configMap:
+            name: "{{ .Values.chromadb.logConfigMap }}"
+            defaultMode: 0644
+        {{- else }}
+        - name: log-config-chromadb
+          configMap:
+            name:  "log-config-chromadb"
+            defaultMode: 0644
+        {{- end }}
+        {{- if (semverCompare ">= 1.0.0" (include "chromadb.apiVersion" .)) }}
+        - name: v1-config
+          configMap:
+            name: v1-config
+            defaultMode: 0644
+        {{- end }}
+  {{- if eq .Values.chromadb.isPersistent true }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: {{ .Values.chromadb.data.accessModes | toYaml | nindent 14 }}
+        {{- if .Values.chromadb.data.storageClass }}
+        storageClassName: "{{ .Values.chromadb.data.storageClass }}"
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.chromadb.data.volumeSize }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted:  {{ .Values.chromadb.data.retentionPolicyOnDelete | default "Delete" }}
+  {{- end }}
+{{- end}}
+{{- end}}
