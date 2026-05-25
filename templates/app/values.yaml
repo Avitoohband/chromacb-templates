@@ -1,0 +1,63 @@
+global:
+  dbankDomain: dev.local
+aicp:
+  yamlOverrides:
+    route:
+      metadata:
+        annotations:
+          haproxy.router.openshift.io/timeout: "240s"
+  namespace: aicp-uat
+  secretValues:
+    base64:
+      SEC_MONGODB_URI: bW9uZ29kYjovL2RkMGFpY3AwMl9tb25nb3VzciU0MGRldi5sb2NhbDpPVXozJTIxJTI3dHlAZGV2bG54ZGJtbjI3LmRldi5sb2NhbDoyODAzMS9HRU5QX0RFVl9EQj9hdXRoTWVjaGFuaXNtPVBMQUlOJnNzbD10cnVlJmF1dGhTb3VyY2U9YWRtaW4mdGxzQWxsb3dpbnZhbGlkQ2VydGlmaWNhdGVzPXRydWU=
+      SEC_INITIAL_ADMIN_PASSWORD: cGFzc3dvcmQ=      
+      SEC_AUTH_SEC: a2xzZmprc2RmanNrZjI5ODQ5MjM0MmthZ2Zrc2RqOTIyMjM0MjRzd2Zmcw==
+  pod:
+    #enableDynatrace: true 
+    replicaCount: 2
+    container:
+      secretsEnv:
+        #MONGODB_URI: SEC_MONGODB_URI
+        INITIAL_ADMIN_PASSWORD: SEC_INITIAL_ADMIN_PASSWORD
+        AUTH_SECRET : SEC_AUTH_SEC
+      envDict:
+        MONGODB_URI: "mongodb://dd0aicp02_mongousr%40dev.local:OUz3%21%27ty@devlnxdbmn27.dev.local:28031/aicp-dev-main?authMechanism=PLAIN&ssl=true&authSource=admin&tlsAllowinvalidCertificates=true"
+        #Platform params
+        CHROMADB_URL: "http://chroma-chromadb.aicp-uat.svc.cluster.local:8000"
+        ENABLE_RAG_UI: "true"
+        #This is INITIAL for System Initizlize First time. 
+        INITIAL_ADMIN_USERNAME: "admin"        
+        INIT_SERVER_UI: "true"   
+        AUTH_URL: "https://aicp-uat.aicp.opsh-apps.linux.dev.local"
+        RESET_ADMIN: "true"
+        #GCP Params 
+        GCP_PROJECT_ID: "gl-idev-int-chtt-proj-genai"
+        GCP_CLOUD_RUN: "false"    
+        #region for vertext ai
+        GCP_REGION: "europe-west1"
+        #endpoint - the url hostname 
+        GCP_ENDPOINT: "europe-west1-aiplatform.googleapis.com"        
+        MODEL_ID: "gemini-2.0-flash-001" #"gemini-2.5-flash" #                        
+        #DEBUG 
+        NEXTAUTH_DEBUG: "true" 
+        NODE_DEBUG : "jwt" 
+        NODE_ENV : "production"                                 
+        NODE_TLS_REJECT_UNAUTHORIZED : 0 
+      name: aicp-genai
+      resources:
+        cpuCount: 0.5
+        memoryGB: 1
+      healthchecks:
+        readiness:
+          http:
+            port: 3000
+            path: /
+          periodSeconds: 20      
+  expose:
+    port: 3000
+    
+  chromadb:  
+    enabled: true
+    replicaCount: 1
+    corsAllowOrigins:
+      - "*"
