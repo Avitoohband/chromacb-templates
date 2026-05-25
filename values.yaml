@@ -1,0 +1,82 @@
+global:
+  dbankDomain: dev.local
+  tenantName: aicp
+  image:
+    server: artifactory.dev.local:8443 #       Don't change it
+    repository: chtt-chat-docker-nonprod-remote/aicp
+app:
+  pod:
+    replicaCount: 2
+    container:
+      name: aicp-genai
+      resources:
+        cpuCount: 0.5
+        memoryGB: 2
+  expose:
+    port: 3000
+
+chromadb:  
+  enabled: false
+  replicaCount: 2
+  podSpec:  
+    podAnnotations: { }
+  readinessProbe:
+    failureThreshold: 20
+    timeoutSeconds: 10
+    periodSeconds: 5
+  livenessProbe:
+    failureThreshold: 40
+    timeoutSeconds: 10
+    periodSeconds: 5
+  startupProbe:
+    failureThreshold: 1000
+    periodSeconds: 5
+    initialDelaySeconds: 10
+  resources:
+    limits:
+      cpu: "500m"  # 0.5 CPU Core
+      memory: "512Mi" # 0.5 Gibibyte
+    requests:
+      cpu: "250m"  # 0.25 CPU Core
+      memory: "256Mi" # 0.25 Gibibyte
+  image:
+    repository: ghcr.io/chroma-core/chroma    
+    pullPolicy: IfNotPresent
+  apiVersion: 1.0.10
+  allowReset: false
+  isPersistent: true
+  persistDirectory: /data
+  logConfigFileLocation: /chroma/log_config.yaml
+  logConfigMap: log-config-chromadb # Set this if you want to use your existing log-config-chromadb ConfigMap
+  logging:
+    root: "INFO"
+    chromadb: "DEBUG"
+    uvicorn: "INFO"
+  anonymizedTelemetry: false
+  corsAllowOrigins: []
+  serverHost: "0.0.0.0"
+  serverHttpPort: 8000
+  maxPayloadSizeBytes: "41943040"
+  data:
+    volumeSize: "5Gi"
+    storageClass: dbank-block-trident
+    accessModes: [ "ReadWriteOnce" ]
+    # accessModes: [ "ReadWriteMany" ]
+    retentionPolicyOnDelete: "Delete"
+  telemetry:
+    enabled: false
+    endpoint: ""
+    serviceName: "chroma"
+  maintenance:
+    collection_cache_policy: null
+    collection_cache_limit_bytes: 1000000000
+  auth:
+    enabled: false
+    type: "token"
+    existingSecret: ""
+    basic:
+      username: "chroma"
+      password: null
+    token:
+      headerType: "Authorization"
+      value: null      
