@@ -93,16 +93,6 @@ spec:
               value: "{{ .Values.chromadb.allowReset | default false}}"
             - name: ANONYMIZED_TELEMETRY
               value: "{{ .Values.chromadb.anonymizedTelemetry | default false }}"
-            {{- if .Values.chromadb.corsAllowOrigins }}
-            - name: CHROMA_SERVER_CORS_ALLOW_ORIGINS
-              {{- if has "*" .Values.chromadb.corsAllowOrigins }}
-              # If '*' is in the list, output a raw wildcard for the "any()" mode.
-              value: "*"
-              {{- else }}
-              # Otherwise, format it as a JSON list for the "list()" mode.
-              value: '{{ .Values.chromadb.corsAllowOrigins | join "\",\"" | printf "[\"%s\"]"}}'
-              {{- end }}
-            {{- end }}           
             - name: ROOT_LOG_LEVEL
               value: "{{ .Values.chromadb.logging.root | upper | default "WARN" }}"
             - name: CHROMA_LOG_LEVEL
@@ -122,6 +112,14 @@ spec:
               {{- end }}
               value: "{{ $bytes }}"
             {{- end }}
+            {{- end }}
+            {{- if .Values.chromadb.corsAllowOrigins }}
+            - name: CHROMA_SERVER_CORS_ALLOW_ORIGINS
+              {{- if has "*" .Values.chromadb.corsAllowOrigins }}
+              value: "*"
+              {{- else }}
+              value: '{{ .Values.chromadb.corsAllowOrigins | join "\",\"" | printf "[\"%s\"]"}}'
+              {{- end }}
             {{- end }}
             {{- if .Values.chromadb.serverHttpPort }}
             - name: CHROMA_SERVER_HTTP_PORT

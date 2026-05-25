@@ -53,7 +53,8 @@ chromadb:
     chromadb: "DEBUG"
     uvicorn: "INFO"
   anonymizedTelemetry: false
-  corsAllowOrigins: []
+  corsAllowOrigins:
+    - "*"
   serverHost: "0.0.0.0"
   serverHttpPort: 8000
   maxPayloadSizeBytes: "41943040"

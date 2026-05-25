@@ -165,6 +165,10 @@ data:
       service_name: {{ .Values.chromadb.telemetry.serviceName }}
       endpoint: {{ .Values.chromadb.telemetry.endpoint }}
     {{- end }}
+    {{- if .Values.chromadb.corsAllowOrigins }}
+    cors:
+      origins: {{ .Values.chromadb.corsAllowOrigins | toJson }}
+    {{- end }}
     port: {{ .Values.chromadb.serverHttpPort }}
     listen_address: {{ .Values.chromadb.serverHost }}
     max_payload_size_bytes: {{ .Values.chromadb.maxPayloadSizeBytes | int64 }}
