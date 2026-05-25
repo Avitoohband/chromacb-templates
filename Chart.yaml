@@ -1,0 +1,12 @@
+apiVersion: v2 # Dont change it 
+name: aicp 
+appVersion: 1.0.9
+chromaVersion: 1.0.10
+version: 1.195.0
+
+
+dependencies:
+- name: dbank-generic-webapp # Dont change it
+  alias: app # Dont change it
+  repository: https://artifactory.dev.local:8443/artifactory/Openshift-Infra-Helm-Prod-Internal-Virtual # Dont change it
+  version: "~0.16"
