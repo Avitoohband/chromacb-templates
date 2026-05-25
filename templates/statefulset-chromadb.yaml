@@ -229,7 +229,9 @@ spec:
         {{- end }}
   {{- if eq .Values.chromadb.isPersistent true }}
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: data
       spec:
         accessModes: {{ .Values.chromadb.data.accessModes | toYaml | nindent 14 }}
