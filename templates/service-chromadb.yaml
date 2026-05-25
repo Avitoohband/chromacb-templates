@@ -1,0 +1,17 @@
+{{- if .Values.chromadb }}
+{{- if .Values.chromadb.enabled }}
+# templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: chroma-chromadb # Hardcoded name
+  namespace: "{{ .Values.namespace }}"
+spec:
+  type: {{ if .Values.chromadb.service }}{{ .Values.chromadb.service.type | default "ClusterIP" }}{{ else }}ClusterIP{{ end }}
+  ports:
+    - port: {{ .Values.chromadb.serverHttpPort }} # Uses 8000 from chromadb.serverHttpPort
+      targetPort: {{ .Values.chromadb.serverHttpPort }} # Uses 8000 from chromadb.serverHttpPort
+      protocol: TCP # Standard protocol
+      name: http # Standard name for the HTTP port
+{{- end}}
+{{- end}}
